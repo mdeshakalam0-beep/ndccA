@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. admins collection: Allow reading own admin document only. No exists() checks here (prevents recursion).
+    match /admins/{email} {
+      allow read: if request.auth != null && 
+                  request.auth.token.email == email;
+      allow write: if false; 
+    }
+
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return request.auth != null && 
+             exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
+    }
+
+    // 2. classes collection: Authenticated users can read. Admins have full CRUD.
+    match /classes/{classId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 3. homework collection: Authenticated users can read. Admins have full CRUD.
+    match /homework/{homeworkId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 4. assignments collection: Authenticated users can read. Admins have full CRUD.
+    match /assignments/{assignmentId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 5. liveClasses collection: Authenticated users can read. Admins have full CRUD.
+    match /liveClasses/{classId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 6. recordedClasses collection: Authenticated users can read. Admins have full CRUD.
+    match /recordedClasses/{classId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 7. students collection: Admins have full access. Students can read/write their own document based on UID.
+    match /students/{studentId} {
+      allow read, write: if isAdmin() || 
+                          (request.auth != null && request.auth.uid == studentId);
+      
+      // Nested subcollection for Student Test Attempts
+      match /testAttempts/{attemptId} {
+        allow read, write: if isAdmin() || 
+                            (request.auth != null && request.auth.uid == studentId);
+      }
+    }
+
+    // 8. Curriculum & Settings: Students read-only. Admins full read/write.
+    match /subjects/{subjectId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /objectiveTests/{testId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /heroBanners/{bannerId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{settingsId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 9. Analytics: Admins only.
+    match /analytics/{analyticsId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

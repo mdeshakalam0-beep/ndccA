@@ -29,6 +29,7 @@ import {
   X, 
   SlidersHorizontal
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface ClassDoc {
   id: string;
@@ -49,6 +50,7 @@ type ClassFormValues = zod.infer<typeof classSchema>;
 
 export const Classes: React.FC = () => {
   const toast = useToast();
+  const { user } = useAuth();
   const [classes, setClasses] = useState<ClassDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState(false);
@@ -76,16 +78,29 @@ export const Classes: React.FC = () => {
       snapshot.forEach((doc) => {
         list.push({ id: doc.id, ...doc.data() } as ClassDoc);
       });
+      console.log('[Firestore Permission Audit] Read classes: SUCCESS', {
+        collectionPath: 'classes',
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'GRANTED',
+        queryResultCount: list.length,
+        queryResult: list
+      });
       setClasses(list);
       setLoading(false);
     }, (err) => {
-      console.error("Error loading classes:", err);
+      console.error('[Firestore Permission Audit] Read classes: FAILED', {
+        collectionPath: 'classes',
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'DENIED',
+        errorMessage: err.message,
+        errorDetails: err
+      });
       toast.error("Failed to load classes from database.");
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleOpenAdd = () => {
     setEditingClass(null);
@@ -107,6 +122,8 @@ export const Classes: React.FC = () => {
 
   const onSubmit = async (data: ClassFormValues) => {
     setSaving(true);
+    const action = editingClass ? 'UPDATE' : 'CREATE';
+    const path = editingClass ? `classes/${editingClass.id}` : 'classes';
     try {
       if (editingClass) {
         // Update class
@@ -116,21 +133,37 @@ export const Classes: React.FC = () => {
           isActive: data.isActive,
           updatedAt: Timestamp.now()
         });
+        console.log(`[Firestore Permission Audit] Write class (${action}): SUCCESS`, {
+          collectionPath: path,
+          authenticatedEmail: user?.email || 'N/A',
+          permissionResult: 'GRANTED'
+        });
         toast.success(`Class "${data.className}" updated successfully.`);
       } else {
         // Create class
-        await addDoc(collection(db, 'classes'), {
+        const docRef = await addDoc(collection(db, 'classes'), {
           className: data.className,
           displayOrder: data.displayOrder,
           isActive: data.isActive,
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now()
         });
+        console.log(`[Firestore Permission Audit] Write class (${action}): SUCCESS`, {
+          collectionPath: `${path}/${docRef.id}`,
+          authenticatedEmail: user?.email || 'N/A',
+          permissionResult: 'GRANTED'
+        });
         toast.success(`Class "${data.className}" created successfully.`);
       }
       setOpenModal(false);
     } catch (err: any) {
-      console.error("Error saving class:", err);
+      console.error(`[Firestore Permission Audit] Write class (${action}): FAILED`, {
+        collectionPath: path,
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'DENIED',
+        errorMessage: err.message,
+        errorDetails: err
+      });
       toast.error(err.message || "Failed to save class data.");
     } finally {
       setSaving(false);
@@ -138,14 +171,26 @@ export const Classes: React.FC = () => {
   };
 
   const toggleStatus = async (c: ClassDoc) => {
+    const path = `classes/${c.id}`;
     try {
       await updateDoc(doc(db, 'classes', c.id), {
         isActive: !c.isActive,
         updatedAt: Timestamp.now()
       });
+      console.log(`[Firestore Permission Audit] Write class (TOGGLE_STATUS): SUCCESS`, {
+        collectionPath: path,
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'GRANTED'
+      });
       toast.success(`Class "${c.className}" ${!c.isActive ? 'enabled' : 'disabled'} successfully.`);
     } catch (err: any) {
-      console.error("Error toggling class status:", err);
+      console.error(`[Firestore Permission Audit] Write class (TOGGLE_STATUS): FAILED`, {
+        collectionPath: path,
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'DENIED',
+        errorMessage: err.message,
+        errorDetails: err
+      });
       toast.error("Failed to update status.");
     }
   };
@@ -185,6 +230,7 @@ export const Classes: React.FC = () => {
   const confirmDelete = async () => {
     if (!deletingClass) return;
     setCheckingLink(true);
+    const path = `classes/${deletingClass.id}`;
     
     try {
       const isLinked = await checkIsLinked(deletingClass.id);
@@ -196,10 +242,21 @@ export const Classes: React.FC = () => {
       }
 
       await deleteDoc(doc(db, 'classes', deletingClass.id));
+      console.log(`[Firestore Permission Audit] Write class (DELETE): SUCCESS`, {
+        collectionPath: path,
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'GRANTED'
+      });
       toast.success(`Class "${deletingClass.className}" deleted successfully.`);
       setDeletingClass(null);
     } catch (err: any) {
-      console.error("Error deleting class:", err);
+      console.error(`[Firestore Permission Audit] Write class (DELETE): FAILED`, {
+        collectionPath: path,
+        authenticatedEmail: user?.email || 'N/A',
+        permissionResult: 'DENIED',
+        errorMessage: err.message,
+        errorDetails: err
+      });
       toast.error("Failed to delete class.");
     } finally {
       setCheckingLink(false);
