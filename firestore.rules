@@ -15,16 +15,30 @@ service cloud.firestore {
              exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
     }
 
+    // Helper function to check if student is the owner of the document (supporting studentId, uid, and studentUid fields)
+    function isStudentOwner() {
+      return request.auth != null && (
+        ( 'studentId' in resource.data && resource.data.studentId == request.auth.uid ) ||
+        ( 'uid' in resource.data && resource.data.uid == request.auth.uid ) ||
+        ( 'studentUid' in resource.data && resource.data.studentUid == request.auth.uid )
+      );
+    }
+
     // Helper function to check if student is authorized for class standard (with backward compatibility)
     function isStudentForClass() {
       return request.auth != null && (
         !('classId' in resource.data) || 
         resource.data.classId == "all" || 
-        resource.data.classId == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.classId
+        (
+          exists(/databases/$(database)/documents/students/$(request.auth.uid)) && 
+          resource.data.classId == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.classId
+        )
       );
     }
 
-    // 2. classes collection: Authenticated users can read. Admins have full CRUD.
+    // 2. classes collection: Read is open to all authenticated users because the Student Portal 
+    // requires dynamic class list loading for student profile registration and editing dropdowns.
+    // Writes are restricted strictly to Admins.
     match /classes/{classId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
@@ -106,7 +120,7 @@ service cloud.firestore {
       allow read, write: if isAdmin() || 
                           (request.auth != null && request.auth.uid == studentId);
       
-      // Nested subcollections under students for student profile specific records
+      // Nested subcollections under students
       match /testAttempts/{id} {
         allow read, write: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
       }
@@ -136,34 +150,34 @@ service cloud.firestore {
       }
     }
 
-    // Root-level rules for student specific collections (if structured as standalone root collections)
+    // Root-level rules for student specific collections (supporting studentId, uid, and studentUid)
     match /attendance/{id} {
-      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow read: if isAdmin() || isStudentOwner();
       allow write: if isAdmin();
     }
 
     match /fees/{id} {
-      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow read: if isAdmin() || isStudentOwner();
       allow write: if isAdmin();
     }
 
     match /results/{id} {
-      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow read: if isAdmin() || isStudentOwner();
       allow write: if isAdmin();
     }
 
     match /studentProgress/{id} {
-      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow read: if isAdmin() || isStudentOwner();
       allow write: if isAdmin();
     }
 
     match /certificates/{id} {
-      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow read: if isAdmin() || isStudentOwner();
       allow write: if isAdmin();
     }
 
     match /parents/{id} {
-      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow read: if isAdmin() || isStudentOwner();
       allow write: if isAdmin();
     }
   }
