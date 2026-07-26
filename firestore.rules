@@ -15,77 +15,156 @@ service cloud.firestore {
              exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
     }
 
+    // Helper function to check if student is authorized for class standard (with backward compatibility)
+    function isStudentForClass() {
+      return request.auth != null && (
+        !('classId' in resource.data) || 
+        resource.data.classId == "all" || 
+        resource.data.classId == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.classId
+      );
+    }
+
     // 2. classes collection: Authenticated users can read. Admins have full CRUD.
     match /classes/{classId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
-    // 3. homework collection: Authenticated users can read. Admins have full CRUD.
-    match /homework/{homeworkId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    // 4. assignments collection: Authenticated users can read. Admins have full CRUD.
-    match /assignments/{assignmentId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    // 5. liveClasses collection: Authenticated users can read. Admins have full CRUD.
-    match /liveClasses/{classId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    // 6. recordedClasses collection: Authenticated users can read. Admins have full CRUD.
-    match /recordedClasses/{classId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    // 7. students collection: Admins have full access. Students can read/write their own document based on UID.
-    match /students/{studentId} {
-      allow read, write: if isAdmin() || 
-                          (request.auth != null && request.auth.uid == studentId);
-      
-      // Nested subcollection for Student Test Attempts
-      match /testAttempts/{attemptId} {
-        allow read, write: if isAdmin() || 
-                            (request.auth != null && request.auth.uid == studentId);
-      }
-    }
-
-    // 8. Curriculum & Settings: Students read-only. Admins full read/write.
+    // 3. subjects collection: Class-filtered reads for students. Admins have full CRUD.
     match /subjects/{subjectId} {
-      allow read: if request.auth != null;
+      allow read: if isAdmin() || isStudentForClass();
       allow write: if isAdmin();
     }
 
+    // 4. objectiveTests collection: Class-filtered reads for students. Admins have full CRUD.
     match /objectiveTests/{testId} {
-      allow read: if request.auth != null;
+      allow read: if isAdmin() || isStudentForClass();
       allow write: if isAdmin();
     }
 
+    // 5. notifications collection: Class-filtered reads for students. Admins have full CRUD.
     match /notifications/{notificationId} {
-      allow read: if request.auth != null;
+      allow read: if isAdmin() || isStudentForClass();
       allow write: if isAdmin();
     }
 
+    // 6. heroBanners collection: Class-filtered reads for students. Admins have full CRUD.
     match /heroBanners/{bannerId} {
+      allow read: if isAdmin() || isStudentForClass();
+      allow write: if isAdmin();
+    }
+
+    // 7. homework collection: Class-filtered reads for students. Admins have full CRUD.
+    match /homework/{homeworkId} {
+      allow read: if isAdmin() || isStudentForClass();
+      allow write: if isAdmin();
+    }
+
+    // 8. assignments collection: Class-filtered reads for students. Admins have full CRUD.
+    match /assignments/{assignmentId} {
+      allow read: if isAdmin() || isStudentForClass();
+      allow write: if isAdmin();
+    }
+
+    // 9. liveClasses collection: Class-filtered reads for students. Admins have full CRUD.
+    match /liveClasses/{liveClassId} {
+      allow read: if isAdmin() || isStudentForClass();
+      allow write: if isAdmin();
+    }
+
+    // 10. recordedClasses collection: Class-filtered reads for students. Admins have full CRUD.
+    match /recordedClasses/{recordedClassId} {
+      allow read: if isAdmin() || isStudentForClass();
+      allow write: if isAdmin();
+    }
+
+    // 11. teachers collection: Authenticated users can read. Admins have full CRUD.
+    match /teachers/{teacherId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
+    // 12. gallery collection: Authenticated users can read. Admins have full CRUD.
+    match /gallery/{imageId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 13. settings collection: Authenticated users can read. Admins have full CRUD.
     match /settings/{settingsId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
-    // 9. Analytics: Admins only.
+    // 14. analytics collection: Admins only.
     match /analytics/{analyticsId} {
       allow read, write: if isAdmin();
+    }
+
+    // 15. students collection: Admins have full access. Students can read/write their own document based on UID.
+    match /students/{studentId} {
+      allow read, write: if isAdmin() || 
+                          (request.auth != null && request.auth.uid == studentId);
+      
+      // Nested subcollections under students for student profile specific records
+      match /testAttempts/{id} {
+        allow read, write: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+      }
+      match /attendance/{id} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+        allow write: if isAdmin();
+      }
+      match /fees/{id} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+        allow write: if isAdmin();
+      }
+      match /results/{id} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+        allow write: if isAdmin();
+      }
+      match /studentProgress/{id} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+        allow write: if isAdmin();
+      }
+      match /certificates/{id} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+        allow write: if isAdmin();
+      }
+      match /parents/{id} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == studentId);
+        allow write: if isAdmin();
+      }
+    }
+
+    // Root-level rules for student specific collections (if structured as standalone root collections)
+    match /attendance/{id} {
+      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow write: if isAdmin();
+    }
+
+    match /fees/{id} {
+      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow write: if isAdmin();
+    }
+
+    match /results/{id} {
+      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow write: if isAdmin();
+    }
+
+    match /studentProgress/{id} {
+      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow write: if isAdmin();
+    }
+
+    match /certificates/{id} {
+      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow write: if isAdmin();
+    }
+
+    match /parents/{id} {
+      allow read: if isAdmin() || (request.auth != null && (resource.data.studentId == request.auth.uid || resource.data.uid == request.auth.uid));
+      allow write: if isAdmin();
     }
   }
 }
