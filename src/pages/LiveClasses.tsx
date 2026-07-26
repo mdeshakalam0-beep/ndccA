@@ -17,10 +17,8 @@ import {
   Plus, 
   Edit2, 
   Trash2, 
-  Calendar, 
-  Clock, 
-  Link as LinkIcon, 
-  GraduationCap
+  GraduationCap, 
+  Play
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -31,12 +29,21 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as zod from 'zod';
 
+// Extractor utility for YouTube ID (compatible with standard, live, shorts, embed, and shortened URLs)
+export function getYouTubeId(url: string): string | null {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|live\/|shorts\/)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 const liveClassSchema = zod.object({
-  topic: zod.string().min(2, 'Topic must be at least 2 characters'),
-  meetingUrl: zod.string().url('Invalid meeting URL (must start with http/https)'),
+  title: zod.string().min(2, 'Title must be at least 2 characters'),
+  description: zod.string().min(5, 'Description must be at least 5 characters'),
+  youtubeLiveUrl: zod.string().refine((val) => {
+    return getYouTubeId(val) !== null;
+  }, 'Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=... or https://youtube.com/live/...)'),
   classId: zod.string().min(1, 'Please select a target class standard'),
-  date: zod.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
-  time: zod.string().regex(/^\d{2}:\d{2}$/, 'Time must be in HH:MM format'),
 });
 
 type LiveClassFormValues = zod.infer<typeof liveClassSchema>;
@@ -56,16 +63,21 @@ export const LiveClasses: React.FC = () => {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [liveClassToDelete, setLiveClassToDelete] = useState<any | null>(null);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<LiveClassFormValues>({
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<LiveClassFormValues>({
     resolver: zodResolver(liveClassSchema),
     defaultValues: {
-      topic: '',
-      meetingUrl: '',
+      title: '',
+      description: '',
+      youtubeLiveUrl: '',
       classId: '',
-      date: new Date().toISOString().split('T')[0],
-      time: '18:00'
     }
   });
+
+  const watchedLiveUrl = watch('youtubeLiveUrl');
+
+  const previewYoutubeId = useMemo(() => {
+    return getYouTubeId(watchedLiveUrl || '');
+  }, [watchedLiveUrl]);
 
   // Listen to Firestore classes list sorted by displayOrder ASC
   useEffect(() => {
@@ -89,12 +101,8 @@ export const LiveClasses: React.FC = () => {
       snap.forEach((doc) => {
         list.push({ id: doc.id, ...doc.data() });
       });
-      // Sort by date/time ascending (closest schedules first)
-      setLiveClasses(list.sort((a, b) => {
-        const timeA = `${a.date}T${a.time}`;
-        const timeB = `${b.date}T${b.time}`;
-        return timeA.localeCompare(timeB);
-      }));
+      // Sort by creation date descending
+      setLiveClasses(list.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
       setLoading(false);
     }, (error) => {
       console.error(error);
@@ -152,11 +160,10 @@ export const LiveClasses: React.FC = () => {
   const handleCreateClick = () => {
     setEditingLiveClass(null);
     reset({
-      topic: '',
-      meetingUrl: '',
+      title: '',
+      description: '',
+      youtubeLiveUrl: '',
       classId: '',
-      date: new Date().toISOString().split('T')[0],
-      time: '18:00'
     });
     setIsFormOpen(true);
   };
@@ -164,11 +171,10 @@ export const LiveClasses: React.FC = () => {
   const handleEditClick = (lc: any) => {
     setEditingLiveClass(lc);
     reset({
-      topic: lc.topic,
-      meetingUrl: lc.meetingUrl,
+      title: lc.title,
+      description: lc.description || '',
+      youtubeLiveUrl: lc.youtubeLiveUrl || '',
       classId: lc.classId || '',
-      date: lc.date || new Date().toISOString().split('T')[0],
-      time: lc.time || '18:00'
     });
     setIsFormOpen(true);
   };
@@ -182,31 +188,30 @@ export const LiveClasses: React.FC = () => {
     }
 
     const payload = {
-      topic: data.topic,
-      meetingUrl: data.meetingUrl,
+      title: data.title,
+      description: data.description,
+      youtubeLiveUrl: data.youtubeLiveUrl,
       classId: data.classId,
       className, // Save class name string
-      date: data.date,
-      time: data.time,
       updatedAt: Timestamp.now()
     };
 
     try {
       if (editingLiveClass) {
         await updateDoc(doc(db, 'liveClasses', editingLiveClass.id), payload);
-        toast.success('Live class session saved successfully.');
+        toast.success('Live class saved successfully.');
       } else {
         const newPayload = {
           ...payload,
           createdAt: Timestamp.now(),
         };
         await addDoc(collection(db, 'liveClasses'), newPayload);
-        toast.success('New live class session scheduled.');
+        toast.success('New YouTube live class scheduled.');
       }
       setIsFormOpen(false);
     } catch (err) {
       console.error(err);
-      toast.error('Failed to save live class scheduling.');
+      toast.error('Failed to save live class.');
     }
   };
 
@@ -219,7 +224,7 @@ export const LiveClasses: React.FC = () => {
     if (!liveClassToDelete) return;
     try {
       await deleteDoc(doc(db, 'liveClasses', liveClassToDelete.id));
-      toast.success('Live class session cancelled successfully.');
+      toast.success('Live class session deleted successfully.');
       setIsDeleteOpen(false);
     } catch (err) {
       console.error(err);
@@ -233,7 +238,7 @@ export const LiveClasses: React.FC = () => {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between text-left select-none">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">Live Classes</h1>
-          <p className="text-sm text-muted-foreground">Schedule webinars, target standards, and distribute Zoom or Meet join links.</p>
+          <p className="text-sm text-muted-foreground">Schedule and configure YouTube Live classes for targeted standards.</p>
         </div>
         <Button onClick={handleCreateClick} className="cursor-pointer">
           <Plus className="h-4.5 w-4.5" />
@@ -265,7 +270,7 @@ export const LiveClasses: React.FC = () => {
           <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground select-none">
             <Video className="h-12 w-12 text-muted-foreground/30 mb-3" />
             <h3 className="text-base font-bold text-foreground">No live classes scheduled</h3>
-            <p className="text-xs text-muted-foreground max-w-sm mt-1">Configure webinars or video lessons for targeted classes.</p>
+            <p className="text-xs text-muted-foreground max-w-sm mt-1">Configure YouTube Live streams for targeted classes.</p>
             <Button onClick={handleCreateClick} variant="outline" className="mt-4 cursor-pointer">
               <Plus className="h-4 w-4" /> Schedule First Session
             </Button>
@@ -275,10 +280,10 @@ export const LiveClasses: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-secondary/40 border-b border-border/50 text-xs font-bold text-muted-foreground uppercase tracking-wider select-none">
-                  <th className="py-4 px-6">Class Topic</th>
+                  <th className="py-4 px-6">Class Title</th>
                   <th className="py-4 px-6">Class</th>
-                  <th className="py-4 px-6 text-center">Schedule Date & Time</th>
-                  <th className="py-4 px-6">Platform Link</th>
+                  <th className="py-4 px-6">YouTube Live Stream</th>
+                  <th className="py-4 px-6 text-center">Created At</th>
                   <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
               </thead>
@@ -286,7 +291,10 @@ export const LiveClasses: React.FC = () => {
                 {filteredLiveClasses.map((lc) => (
                   <tr key={lc.id} className="hover:bg-secondary/20 transition-all">
                     <td className="py-3.5 px-6 font-semibold text-foreground text-left">
-                      {lc.topic}
+                      <div className="flex flex-col">
+                        <span>{lc.title}</span>
+                        <span className="text-[11px] font-normal text-muted-foreground line-clamp-1 mt-0.5">{lc.description}</span>
+                      </div>
                     </td>
                     <td className="py-3.5 px-6 text-muted-foreground font-semibold">
                       <div className="flex items-center gap-1.5 text-primary">
@@ -294,22 +302,19 @@ export const LiveClasses: React.FC = () => {
                         {lc.className || 'Unassigned'}
                       </div>
                     </td>
-                    <td className="py-3.5 px-6 text-center text-muted-foreground font-medium">
-                      <div className="flex flex-col items-center justify-center gap-1">
-                        <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5 text-rose-500/70" /> {lc.date}</span>
-                        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Clock className="h-3 w-3 text-muted-foreground" /> {lc.time}</span>
-                      </div>
-                    </td>
                     <td className="py-3.5 px-6 text-primary select-none">
                       <a
-                        href={lc.meetingUrl}
+                        href={lc.youtubeLiveUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs py-1 px-2.5 bg-primary/10 rounded-md hover:underline font-semibold"
+                        className="inline-flex items-center gap-1.5 text-xs py-1.5 px-3 bg-red-500/10 text-red-600 rounded-md hover:bg-red-500/15 font-semibold transition-all border border-red-500/10"
                       >
-                        <LinkIcon className="h-3 w-3" />
-                        Join Meeting Link
+                        <Play className="h-3.5 w-3.5 shrink-0 fill-red-600" />
+                        Watch Live Stream
                       </a>
+                    </td>
+                    <td className="py-3.5 px-6 text-center text-muted-foreground font-medium select-none">
+                      {lc.createdAt ? new Date(lc.createdAt.toMillis()).toLocaleDateString([], { dateStyle: 'medium' }) : 'N/A'}
                     </td>
                     <td className="py-3.5 px-6 text-right select-none">
                       <div className="flex items-center justify-end gap-1.5">
@@ -341,37 +346,72 @@ export const LiveClasses: React.FC = () => {
       <Dialog
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        title={editingLiveClass ? 'Modify Live Class' : 'Schedule Webinar Session'}
-        description="Provide targeted standard classes, zoom/meet joining links, and scheduled timing."
+        title={editingLiveClass ? 'Modify Live Class' : 'Schedule YouTube Live Session'}
+        description="Provide targeted standard classes, streaming links, and descriptions."
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-left select-none">
-          <Input label="Webinar Session Topic" id="topic" placeholder="e.g. Electric Dipole and Fields lecture" {...register('topic')} error={errors.topic?.message} />
+          <Input label="Live Class Title" id="title" placeholder="e.g., Electric Dipole and Fields Lecture 02" {...register('title')} error={errors.title?.message} />
 
-          <Input label="Meeting Join Link (e.g. Zoom, Google Meet)" id="meetingUrl" placeholder="https://zoom.us/j/1234567" {...register('meetingUrl')} error={errors.meetingUrl?.message} />
+          <div className="w-full flex flex-col gap-1.5">
+            <label htmlFor="description" className="text-xs font-semibold tracking-wide text-foreground/80">
+              Live Stream Description
+            </label>
+            <textarea
+              id="description"
+              rows={3}
+              placeholder="Provide live stream outline, details, or pre-requisite reading here..."
+              className={`w-full bg-card text-sm p-3 rounded-lg border border-border outline-none transition-all placeholder:text-muted-foreground/50 resize-none focus:border-primary focus:ring-1 focus:ring-primary ${
+                errors.description ? 'border-destructive focus:border-destructive focus:ring-destructive' : ''
+              }`}
+              {...register('description')}
+            />
+            {errors.description && (
+              <span className="text-[11px] font-medium text-destructive leading-none">
+                {errors.description.message}
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label="YouTube Live Stream URL" id="youtubeLiveUrl" placeholder="https://youtube.com/live/..." {...register('youtubeLiveUrl')} error={errors.youtubeLiveUrl?.message} />
+
             <Select
               label="Target Class Standard"
               id="classId"
               options={[
-                { value: '', label: 'Select standard first' },
+                { value: '', label: 'Select target standard' },
                 ...liveClassFormOptions
               ]}
               {...register('classId')}
               error={errors.classId?.message}
             />
-
-            <Input label="Session Schedule Date" id="date" type="date" {...register('date')} error={errors.date?.message} />
           </div>
 
-          <Input label="Session Schedule Time" id="time" type="time" {...register('time')} error={errors.time?.message} />
+          {/* Embedded YouTube Player Preview */}
+          {previewYoutubeId && (
+            <div className="space-y-2 mt-2 text-left">
+              <span className="text-xs font-bold tracking-wide text-foreground/80">
+                YouTube Live Embed Preview
+              </span>
+              <div className="aspect-video w-full rounded-xl overflow-hidden border border-border bg-slate-900 shadow-sm relative">
+                <iframe
+                  className="w-full h-full absolute inset-0"
+                  src={`https://www.youtube.com/embed/${previewYoutubeId}`}
+                  title="YouTube video player preview"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-border/40">
             <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)} className="cursor-pointer">
               Cancel
             </Button>
             <Button type="submit" className="cursor-pointer">
-              {editingLiveClass ? 'Save Changes' : 'Schedule Session'}
+              {editingLiveClass ? 'Save Changes' : 'Schedule Stream'}
             </Button>
           </div>
         </form>
@@ -382,7 +422,7 @@ export const LiveClasses: React.FC = () => {
         isOpen={isDeleteOpen}
         onClose={() => setIsDeleteOpen(false)}
         title="Cancel Session Confirmation"
-        description="Are you sure you want to permanently cancel this scheduled live class? It will disappear from students timetables."
+        description="Are you sure you want to permanently delete this scheduled live class stream?"
         footerActions={
           <>
             <Button variant="outline" onClick={() => setIsDeleteOpen(false)} className="cursor-pointer">
@@ -396,8 +436,8 @@ export const LiveClasses: React.FC = () => {
       >
         {liveClassToDelete && (
           <div className="bg-secondary/40 border border-border/40 rounded-xl p-3.5 text-left select-none">
-            <p className="font-bold text-foreground leading-snug">{liveClassToDelete.topic}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Date: {liveClassToDelete.date} • Time: {liveClassToDelete.time}</p>
+            <p className="font-bold text-foreground leading-snug">{liveClassToDelete.title}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Stream: {liveClassToDelete.youtubeLiveUrl}</p>
           </div>
         )}
       </Dialog>

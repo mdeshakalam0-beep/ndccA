@@ -18,8 +18,7 @@ import {
   Edit2, 
   Trash2, 
   GraduationCap, 
-  BookOpen, 
-  Link as LinkIcon
+  BookOpen
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -30,10 +29,20 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as zod from 'zod';
 
+// Utility extractor for YouTube ID (standard, shortener, embed, mobile, shorts, live)
+export function getYouTubeId(url: string): string | null {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|live\/|shorts\/)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 const recordedClassSchema = zod.object({
   title: zod.string().min(2, 'Title must be at least 2 characters'),
   description: zod.string().min(5, 'Description must be at least 5 characters'),
-  videoUrl: zod.string().url('Invalid video link URL (must start with http/https)'),
+  youtubeUrl: zod.string().refine((val) => {
+    return getYouTubeId(val) !== null;
+  }, 'Please enter a valid YouTube video URL (e.g. https://www.youtube.com/watch?v=...)'),
   classId: zod.string().min(1, 'Please select a class standard'),
   subjectId: zod.string().min(1, 'Please select a subject'),
 });
@@ -61,13 +70,18 @@ export const RecordedClasses: React.FC = () => {
     defaultValues: {
       title: '',
       description: '',
-      videoUrl: '',
+      youtubeUrl: '',
       classId: '',
       subjectId: '',
     }
   });
 
   const watchedClassId = watch('classId');
+  const watchedYoutubeUrl = watch('youtubeUrl');
+
+  const previewYoutubeId = useMemo(() => {
+    return getYouTubeId(watchedYoutubeUrl || '');
+  }, [watchedYoutubeUrl]);
 
   // Listen to Firestore classes list sorted by displayOrder ASC
   useEffect(() => {
@@ -186,7 +200,7 @@ export const RecordedClasses: React.FC = () => {
     reset({
       title: '',
       description: '',
-      videoUrl: '',
+      youtubeUrl: '',
       classId: '',
       subjectId: '',
     });
@@ -198,7 +212,7 @@ export const RecordedClasses: React.FC = () => {
     reset({
       title: rc.title,
       description: rc.description,
-      videoUrl: rc.videoUrl || '',
+      youtubeUrl: rc.youtubeUrl || '',
       classId: rc.classId || '',
       subjectId: rc.subjectId || '',
     });
@@ -217,10 +231,15 @@ export const RecordedClasses: React.FC = () => {
       className = selectedClassDoc ? selectedClassDoc.className : 'Unassigned Class';
     }
 
+    // Auto-generate YouTube Embed URL
+    const videoId = getYouTubeId(data.youtubeUrl);
+    const youtubeEmbedUrl = videoId ? `https://www.youtube.com/embed/${videoId}` : '';
+
     const payload = {
       title: data.title,
       description: data.description,
-      videoUrl: data.videoUrl,
+      youtubeUrl: data.youtubeUrl,
+      youtubeEmbedUrl,
       classId: data.classId,
       className, // Save class name string
       subjectId: data.subjectId,
@@ -302,7 +321,7 @@ export const RecordedClasses: React.FC = () => {
           <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground select-none">
             <Play className="h-12 w-12 text-muted-foreground/30 mb-3" />
             <h3 className="text-base font-bold text-foreground">No recorded lectures uploaded</h3>
-            <p className="text-xs text-muted-foreground max-w-sm mt-1">Upload video lectures (YouTube/Vimeo links) for targeted class standards.</p>
+            <p className="text-xs text-muted-foreground max-w-sm mt-1">Upload YouTube video lectures for targeted class standards.</p>
             <Button onClick={handleCreateClick} variant="outline" className="mt-4 cursor-pointer">
               <Plus className="h-4 w-4" /> Add First Video
             </Button>
@@ -315,7 +334,7 @@ export const RecordedClasses: React.FC = () => {
                   <th className="py-4 px-6">Lecture Title</th>
                   <th className="py-4 px-6">Class</th>
                   <th className="py-4 px-6">Subject</th>
-                  <th className="py-4 px-6">Video Link</th>
+                  <th className="py-4 px-6">YouTube Video</th>
                   <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
               </thead>
@@ -342,13 +361,13 @@ export const RecordedClasses: React.FC = () => {
                     </td>
                     <td className="py-3.5 px-6 text-primary select-none">
                       <a
-                        href={rc.videoUrl}
+                        href={rc.youtubeUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs py-1 px-2.5 bg-primary/10 rounded-md hover:underline font-semibold"
+                        className="inline-flex items-center gap-1.5 text-xs py-1.5 px-3 bg-red-500/10 text-red-600 rounded-md hover:bg-red-500/15 font-semibold transition-all border border-red-500/10"
                       >
-                        <LinkIcon className="h-3 w-3" />
-                        Open Video Lecture
+                        <Play className="h-3.5 w-3.5 shrink-0 fill-red-600" />
+                        Watch Video
                       </a>
                     </td>
                     <td className="py-3.5 px-6 text-right select-none">
@@ -381,7 +400,7 @@ export const RecordedClasses: React.FC = () => {
       <Dialog
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        title={editingRecordedClass ? 'Modify Video Details' : 'Add Recorded Lecture'}
+        title={editingRecordedClass ? 'Modify Video Details' : 'Add Recorded YouTube Lecture'}
         description="Provide targeted standard classes, course subject, and video url linkages."
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-left select-none">
@@ -407,7 +426,7 @@ export const RecordedClasses: React.FC = () => {
             )}
           </div>
 
-          <Input label="Video URL Link (e.g., YouTube/Vimeo link)" id="videoUrl" placeholder="https://www.youtube.com/watch?v=..." {...register('videoUrl')} error={errors.videoUrl?.message} />
+          <Input label="YouTube Video URL" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." {...register('youtubeUrl')} error={errors.youtubeUrl?.message} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select
@@ -433,6 +452,25 @@ export const RecordedClasses: React.FC = () => {
               error={errors.subjectId?.message}
             />
           </div>
+
+          {/* Embedded YouTube Player Preview */}
+          {previewYoutubeId && (
+            <div className="space-y-2 mt-2 text-left">
+              <span className="text-xs font-bold tracking-wide text-foreground/80">
+                YouTube Video Embed Preview
+              </span>
+              <div className="aspect-video w-full rounded-xl overflow-hidden border border-border bg-slate-900 shadow-sm relative">
+                <iframe
+                  className="w-full h-full absolute inset-0"
+                  src={`https://www.youtube.com/embed/${previewYoutubeId}`}
+                  title="YouTube video player preview"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-border/40">
             <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)} className="cursor-pointer">
@@ -465,7 +503,7 @@ export const RecordedClasses: React.FC = () => {
         {recordedClassToDelete && (
           <div className="bg-secondary/40 border border-border/40 rounded-xl p-3.5 text-left select-none">
             <p className="font-bold text-foreground leading-snug">{recordedClassToDelete.title}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Subject: {recordedClassToDelete.subjectName} • Video: {recordedClassToDelete.videoUrl}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Subject: {recordedClassToDelete.subjectName} • Video: {recordedClassToDelete.youtubeUrl}</p>
           </div>
         )}
       </Dialog>
